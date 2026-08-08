@@ -40,6 +40,7 @@ export async function authRoutes(fastify, opts) {
 
       return {
         success: true,
+        sessionToken: session.sessionToken,
         onboarding_completed: session.business.onboarding_completed,
         user: session.user,
         business: session.business
