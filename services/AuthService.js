@@ -60,7 +60,7 @@ const SESSIONS = loadSessionsFromDisk();
 
 export class AuthService {
   static getAuthUrl(customRedirectUri) {
-    const oauth2Client = getOAuth2Client();
+    const oauth2Client = getOAuth2Client(customRedirectUri);
     const options = {
       access_type: 'offline',
       prompt: 'consent',
@@ -74,7 +74,7 @@ export class AuthService {
 
   static async handleOAuthCallback(code, customRedirectUri) {
     try {
-      const oauth2Client = getOAuth2Client();
+      const oauth2Client = getOAuth2Client(customRedirectUri);
       let tokenRes;
       if (customRedirectUri) {
         tokenRes = await oauth2Client.getToken({ code, redirect_uri: customRedirectUri });
