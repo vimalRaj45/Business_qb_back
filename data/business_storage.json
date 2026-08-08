@@ -1,0 +1,67 @@
+{
+  "Business": [
+    {
+      "business_id": "biz_6494641df259",
+      "owner_google_id": "111264322203476487867",
+      "business_name": "Vimal raj S's Business",
+      "business_type": "Service / Retail",
+      "email": "vimalraj5207@gmail.com",
+      "phone": "",
+      "address": "",
+      "city": "",
+      "state": "",
+      "country": "",
+      "pincode": "",
+      "tax_number": "",
+      "currency": "INR ₹",
+      "logo_url": "https://lh3.googleusercontent.com/a/ACg8ocItTcTPiOQMpoTosEg6OprRF1RbeizU2uiD2A4c3bgL7KCVklh8=s96-c",
+      "spreadsheet_id": "local_demo_spreadsheet_id",
+      "invoice_prefix": "INV-",
+      "quotation_prefix": "QUO-",
+      "created_at": "2026-08-08T18:10:00.720Z",
+      "updated_at": "2026-08-08T18:19:21.415Z"
+    }
+  ],
+  "Customers": [
+    {
+      "customer_id": "cus_96ad88326c5d",
+      "business_id": "biz_6494641df259",
+      "customer_name": "vimal",
+      "company_name": "acna",
+      "email": "vimalraj5207@gmail.com",
+      "phone": "8807099288",
+      "address": "",
+      "city": "nkl",
+      "state": "tn",
+      "country": "tn",
+      "tax_number": "t45",
+      "opening_balance": "1200",
+      "notes": "",
+      "created_at": "2026-08-08T18:13:22.866Z",
+      "updated_at": "2026-08-08T18:13:22.866Z"
+    }
+  ],
+  "Products": [],
+  "Quotations": [],
+  "QuotationItems": [],
+  "Invoices": [],
+  "InvoiceItems": [],
+  "Payments": [],
+  "Expenses": [],
+  "Transactions": [],
+  "Settings": [],
+  "APIKeys": [
+    {
+      "key_id": "key_d0627d2a1173",
+      "business_id": "biz_6494641df259",
+      "name": "for demo",
+      "key_prefix": "biz_live_44ddc9f...",
+      "key_hash": "db88e0ed1c412dc7c83e8b78b871702c5d1a81d71ed8bc923fa5207247819aa7",
+      "permissions": "[\"*\"]",
+      "created_at": "2026-08-08T18:11:12.997Z",
+      "last_used_at": ""
+    }
+  ],
+  "Webhooks": [],
+  "WebhookLogs": []
+}
