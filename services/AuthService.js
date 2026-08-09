@@ -104,7 +104,90 @@ export class AuthService {
     const googleId = profile.id;
     const email = profile.email ? profile.email.toLowerCase().trim() : '';
 
-    // 1. Ensure user's own business (Owner Business)
+    // 1. Discover all joined workspaces where user's email is an accepted team member
+    const joinedWorkspaces = [];
+
+    for (const [, existingSession] of SESSIONS.entries()) {
+      if (existingSession && existingSession.business && existingSession.tokens) {
+        try {
+          const members = await GoogleSheetsRepository.getRows(
+            existingSession.tokens,
+            existingSession.business.spreadsheet_id || '',
+            'TeamMembers'
+          );
+          const match = (Array.isArray(members) ? members : []).find(
+            m => m && m.email && m.email.toLowerCase().trim() === email && m.status !== 'revoked'
+          );
+
+          if (match) {
+            if (match.status === 'pending') {
+              await GoogleSheetsRepository.updateRow(
+                existingSession.tokens,
+                existingSession.business.spreadsheet_id,
+                'TeamMembers',
+                'member_id',
+                match.member_id,
+                { status: 'active', updated_at: new Date().toISOString() }
+              ).catch(() => {});
+            }
+
+            joinedWorkspaces.push({
+              business_id: existingSession.business.business_id,
+              business_name: existingSession.business.business_name || 'Joined Workspace',
+              role: match.role || 'member',
+              is_owner: false,
+              business: existingSession.business,
+              tokens: existingSession.tokens
+            });
+          }
+        } catch (err) {
+          // ignore error reading team members
+        }
+      }
+    }
+
+    // Check if targetInviteBiz or existing joined workspace exists
+    let selectedJoined = null;
+    if (targetInviteBiz) {
+      selectedJoined = joinedWorkspaces.find(j => j.business_id === targetInviteBiz);
+    }
+    if (!selectedJoined && joinedWorkspaces.length > 0 && !getLocalCachedBusiness(googleId)) {
+      selectedJoined = joinedWorkspaces[0];
+    }
+
+    // IF USER IS AN INVITED STAFF MEMBER: Do NOT force spreadsheet creation or onboarding!
+    if (selectedJoined) {
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      const sessionData = {
+        sessionToken,
+        user: {
+          googleId,
+          email: profile.email || '',
+          name: profile.name || 'Team Member',
+          picture: profile.picture || ''
+        },
+        business: {
+          ...selectedJoined.business,
+          onboarding_completed: true // Skip onboarding for invited staff members!
+        },
+        tokens: selectedJoined.tokens,
+        role: selectedJoined.role || 'member',
+        joinedWorkspaces,
+        workspaces: joinedWorkspaces.map(j => ({
+          business_id: j.business_id,
+          business_name: j.business_name,
+          role: j.role,
+          is_owner: false
+        })),
+        createdAt: Date.now()
+      };
+
+      SESSIONS.set(sessionToken, sessionData);
+      saveSessionsToDisk(SESSIONS);
+      return sessionData;
+    }
+
+    // 2. Default Owner Business Setup (Only run for Business Owners)
     const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
     const cachedBusiness = getLocalCachedBusiness(googleId);
     const now = new Date().toISOString();
@@ -173,64 +256,6 @@ export class AuthService {
       await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', ownedBusiness.business_id, ownedBusiness).catch(() => {});
     }
 
-    // 2. Discover all joined workspaces where user's email is an accepted team member
-    const joinedWorkspaces = [];
-
-    for (const [, existingSession] of SESSIONS.entries()) {
-      if (existingSession && existingSession.business && existingSession.tokens && existingSession.business.business_id !== businessId) {
-        try {
-          const members = await GoogleSheetsRepository.getRows(
-            existingSession.tokens,
-            existingSession.business.spreadsheet_id || '',
-            'TeamMembers'
-          );
-          const match = (Array.isArray(members) ? members : []).find(
-            m => m && m.email && m.email.toLowerCase().trim() === email && m.status !== 'revoked'
-          );
-
-          if (match) {
-            if (match.status === 'pending') {
-              await GoogleSheetsRepository.updateRow(
-                existingSession.tokens,
-                existingSession.business.spreadsheet_id,
-                'TeamMembers',
-                'member_id',
-                match.member_id,
-                { status: 'active', updated_at: new Date().toISOString() }
-              ).catch(() => {});
-            }
-
-            joinedWorkspaces.push({
-              business_id: existingSession.business.business_id,
-              business_name: existingSession.business.business_name || 'Joined Workspace',
-              role: match.role || 'member',
-              is_owner: false,
-              business: existingSession.business,
-              tokens: existingSession.tokens
-            });
-          }
-        } catch (err) {
-          // ignore error reading team members from another session
-        }
-      }
-    }
-
-    // 3. Determine active workspace
-    let activeBusiness = ownedBusiness;
-    let activeTokens = tokens;
-    let activeRole = 'owner';
-
-    // If explicit targetInviteBiz provided or requested, prioritize that workspace
-    if (targetInviteBiz) {
-      const targetJoined = joinedWorkspaces.find(j => j.business_id === targetInviteBiz);
-      if (targetJoined) {
-        activeBusiness = targetJoined.business;
-        activeTokens = targetJoined.tokens;
-        activeRole = targetJoined.role;
-      }
-    }
-
-    // 4. Build workspace options list for Workspace Switcher
     const workspaces = [
       {
         business_id: ownedBusiness.business_id,
@@ -255,9 +280,9 @@ export class AuthService {
         name: profile.name || 'User',
         picture: profile.picture || ''
       },
-      business: activeBusiness,
-      tokens: activeTokens,
-      role: activeRole,
+      business: ownedBusiness,
+      tokens,
+      role: 'owner',
       ownedBusiness,
       joinedWorkspaces,
       workspaces,
