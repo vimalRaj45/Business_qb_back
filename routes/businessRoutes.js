@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { BusinessService } from '../services/BusinessService.js';
 import { EmailService } from '../services/EmailService.js';
-import { requireWebSession } from '../middleware/authMiddleware.js';
+import { requireWebSession, requireOwner } from '../middleware/authMiddleware.js';
 
 export async function businessRoutes(fastify, opts) {
   fastify.addHook('onRequest', requireWebSession);
@@ -16,6 +16,20 @@ export async function businessRoutes(fastify, opts) {
   fastify.put('/api/business', async (request, reply) => {
     const updated = await BusinessService.updateBusinessProfile(request.session, request.body || {});
     return { success: true, data: updated };
+  });
+
+  // Delete Business Account & Google Drive File (Owner Only)
+  fastify.delete('/api/business', { preHandler: [requireOwner] }, async (request, reply) => {
+    try {
+      const res = await BusinessService.deleteAccount(request.session);
+      return { success: true, message: res.message };
+    } catch (err) {
+      console.error('Delete business account error:', err);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'DELETE_ACCOUNT_FAILED', message: err.message }
+      });
+    }
   });
 
   // Create Owned Business Spreadsheet (On-demand for staff members in Settings)
