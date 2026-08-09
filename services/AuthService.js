@@ -103,78 +103,18 @@ export class AuthService {
   static async createOrGetUserSession(profile, tokens) {
     const googleId = profile.id;
     const email = profile.email ? profile.email.toLowerCase().trim() : '';
-    let role = 'owner';
 
-    // Check if user is an invited Team Member in any active session business
-    let targetBusiness = null;
-    let targetTokens = tokens;
+    const availableWorkspaces = [];
 
-    for (const [, existingSession] of SESSIONS.entries()) {
-      if (existingSession && existingSession.business && existingSession.tokens) {
-        try {
-          const members = await GoogleSheetsRepository.getRows(
-            existingSession.tokens,
-            existingSession.business.spreadsheet_id || '',
-            'TeamMembers'
-          );
-          const match = (Array.isArray(members) ? members : []).find(
-            m => m && m.email && m.email.toLowerCase().trim() === email && m.status !== 'revoked'
-          );
-
-          if (match) {
-            targetBusiness = existingSession.business;
-            targetTokens = existingSession.tokens; // Use workspace spreadsheet tokens
-            role = match.role || 'member';
-
-            // Mark invite active if pending
-            if (match.status === 'pending') {
-              await GoogleSheetsRepository.updateRow(
-                existingSession.tokens,
-                existingSession.business.spreadsheet_id,
-                'TeamMembers',
-                'member_id',
-                match.member_id,
-                { status: 'active', updated_at: new Date().toISOString() }
-              ).catch(() => {});
-            }
-            break;
-          }
-        } catch (err) {
-          // ignore error reading team members from another session
-        }
-      }
-    }
-
-    if (targetBusiness) {
-      const sessionToken = crypto.randomBytes(32).toString('hex');
-      const sessionData = {
-        sessionToken,
-        user: {
-          googleId,
-          email: profile.email || '',
-          name: profile.name || 'Team Member',
-          picture: profile.picture || ''
-        },
-        business: targetBusiness,
-        tokens: targetTokens,
-        role,
-        createdAt: Date.now()
-      };
-
-      SESSIONS.set(sessionToken, sessionData);
-      saveSessionsToDisk(SESSIONS);
-      return sessionData;
-    }
-
-    // Default Owner Flow
-    const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
+    // 1. Build Owned Business Workspace
+    const ownedBusinessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
     const cachedBusiness = getLocalCachedBusiness(googleId);
-
     const now = new Date().toISOString();
-    let business = {
-      business_id: businessId,
+
+    let ownedBusiness = {
+      business_id: ownedBusinessId,
       owner_google_id: googleId,
-      business_name: '',
+      business_name: `${profile.name || 'My'}'s Business`,
       business_type: '',
       email: profile.email || '',
       phone: '',
@@ -195,48 +135,98 @@ export class AuthService {
     };
 
     if (cachedBusiness) {
-      business = { ...business, ...cachedBusiness };
+      ownedBusiness = { ...ownedBusiness, ...cachedBusiness };
     }
 
-    let spreadsheetId = business.spreadsheet_id || '';
+    let spreadsheetId = ownedBusiness.spreadsheet_id || '';
     try {
       const sheetRes = await GoogleSheetsRepository.ensureBusinessSpreadsheet(tokens, {
         spreadsheet_id: spreadsheetId,
-        business_name: business.business_name || `${profile.name || 'My'}'s Business`,
+        business_name: ownedBusiness.business_name || `${profile.name || 'My'}'s Business`,
         owner_google_id: googleId
       });
       if (sheetRes && sheetRes.spreadsheetId) {
         spreadsheetId = sheetRes.spreadsheetId;
-        business.spreadsheet_id = spreadsheetId;
+        ownedBusiness.spreadsheet_id = spreadsheetId;
       }
     } catch (err) {
       console.error('⚠️ Warning: Could not create Google Spreadsheet on login:', err.message);
     }
 
-    // Check Google Sheets for existing business
     if (spreadsheetId) {
       try {
         const businesses = await GoogleSheetsRepository.getRows(tokens, spreadsheetId, 'Business');
-        const existing = businesses.find(b => b.owner_google_id === googleId || b.business_id === businessId || b.email === profile.email);
+        const existing = businesses.find(b => b.owner_google_id === googleId || b.business_id === ownedBusinessId || b.email === profile.email);
         if (existing) {
-          business = { ...business, ...existing };
+          ownedBusiness = { ...ownedBusiness, ...existing };
         }
       } catch (err) {
         console.warn('Note reading business row:', err.message);
       }
     }
 
-    // Determine onboarding completion status
-    const isCompleted = String(business.onboarding_completed) === 'true' || 
-                        business.onboarding_completed === true || 
-                        (Boolean(business.business_name) && business.business_name.trim() !== '' && !business.business_name.endsWith("'s Business"));
+    const isCompleted = String(ownedBusiness.onboarding_completed) === 'true' || 
+                        ownedBusiness.onboarding_completed === true || 
+                        (Boolean(ownedBusiness.business_name) && ownedBusiness.business_name.trim() !== '' && !ownedBusiness.business_name.endsWith("'s Business"));
 
-    business.onboarding_completed = isCompleted;
+    ownedBusiness.onboarding_completed = isCompleted;
 
-    // Save initial row if not existing
     if (spreadsheetId) {
-      await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', business.business_id, business).catch(() => {});
+      await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', ownedBusiness.business_id, ownedBusiness).catch(() => {});
     }
+
+    availableWorkspaces.push({
+      business_id: ownedBusiness.business_id,
+      business_name: ownedBusiness.business_name || 'My Business',
+      role: 'owner',
+      business: ownedBusiness,
+      tokens
+    });
+
+    // 2. Search all existing sessions for Team Member invites matching user's email
+    for (const [, existingSession] of SESSIONS.entries()) {
+      if (existingSession && existingSession.business && existingSession.tokens && existingSession.business.business_id !== ownedBusiness.business_id) {
+        try {
+          const members = await GoogleSheetsRepository.getRows(
+            existingSession.tokens,
+            existingSession.business.spreadsheet_id || '',
+            'TeamMembers'
+          );
+          const match = (Array.isArray(members) ? members : []).find(
+            m => m && m.email && m.email.toLowerCase().trim() === email && m.status !== 'revoked'
+          );
+
+          if (match) {
+            // Mark invite active if pending
+            if (match.status === 'pending') {
+              await GoogleSheetsRepository.updateRow(
+                existingSession.tokens,
+                existingSession.business.spreadsheet_id,
+                'TeamMembers',
+                'member_id',
+                match.member_id,
+                { status: 'active', updated_at: new Date().toISOString() }
+              ).catch(() => {});
+            }
+
+            availableWorkspaces.push({
+              business_id: existingSession.business.business_id,
+              business_name: existingSession.business.business_name || 'Shared Workspace',
+              role: match.role || 'member',
+              business: existingSession.business,
+              tokens: existingSession.tokens
+            });
+          }
+        } catch (err) {
+          // ignore error reading team members from another session
+        }
+      }
+    }
+
+    // Default active workspace: Owned workspace if completed or first available
+    const activeWs = (ownedBusiness.onboarding_completed || availableWorkspaces.length === 1)
+      ? availableWorkspaces[0]
+      : availableWorkspaces[availableWorkspaces.length - 1];
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const sessionData = {
@@ -244,18 +234,43 @@ export class AuthService {
       user: {
         googleId,
         email: profile.email || '',
-        name: profile.name || 'Business Owner',
+        name: profile.name || 'User',
         picture: profile.picture || ''
       },
-      business,
-      tokens,
-      role: 'owner',
+      business: activeWs.business,
+      tokens: activeWs.tokens,
+      role: activeWs.role,
+      workspaces: availableWorkspaces.map(w => ({
+        business_id: w.business_id,
+        business_name: w.business_name,
+        role: w.role
+      })),
+      allWorkspaceData: availableWorkspaces,
       createdAt: Date.now()
     };
 
     SESSIONS.set(sessionToken, sessionData);
     saveSessionsToDisk(SESSIONS);
     return sessionData;
+  }
+
+  static async switchWorkspace(sessionToken, targetBusinessId) {
+    const session = SESSIONS.get(sessionToken);
+    if (!session || !session.allWorkspaceData) {
+      throw new Error('Session not found or invalid');
+    }
+
+    const target = session.allWorkspaceData.find(w => w.business_id === targetBusinessId);
+    if (!target) {
+      throw new Error('Workspace not found or access denied');
+    }
+
+    session.business = target.business;
+    session.tokens = target.tokens;
+    session.role = target.role;
+
+    saveSessionsToDisk(SESSIONS);
+    return session;
   }
 
   static getSession(sessionToken) {

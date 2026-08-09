@@ -44,7 +44,8 @@ export async function authRoutes(fastify, opts) {
         onboarding_completed: session.business.onboarding_completed,
         user: session.user,
         business: session.business,
-        role: session.role || 'owner'
+        role: session.role || 'owner',
+        workspaces: session.workspaces || []
       };
     } catch (err) {
       console.error('OAuth Exchange error:', err);
@@ -56,6 +57,28 @@ export async function authRoutes(fastify, opts) {
         success: false,
         error: { code: 'OAUTH_EXCHANGE_FAILED', message: userMsg }
       });
+    }
+  });
+
+  // Switch Workspace Endpoint
+  fastify.post('/api/auth/switch-workspace', async (request, reply) => {
+    try {
+      const sessionToken = request.cookies.session_token || request.headers.authorization?.replace('Bearer ', '');
+      const { business_id } = request.body || {};
+
+      if (!business_id) {
+        return reply.status(400).send({ success: false, error: { message: 'Target business_id is required' } });
+      }
+
+      const session = await AuthService.switchWorkspace(sessionToken, business_id);
+      return {
+        success: true,
+        message: `Switched active workspace to ${session.business.business_name || 'Selected Business'}`,
+        business: session.business,
+        role: session.role
+      };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'SWITCH_FAILED', message: err.message } });
     }
   });
 
@@ -110,7 +133,8 @@ export async function authRoutes(fastify, opts) {
       authenticated: true,
       user: session.user,
       business: session.business,
-      role: session.role || (session.business?.owner_google_id === session.user?.googleId ? 'owner' : 'member')
+      role: session.role || (session.business?.owner_google_id === session.user?.googleId ? 'owner' : 'member'),
+      workspaces: session.workspaces || []
     };
   });
 
