@@ -165,4 +165,24 @@ export class QuotationService {
 
     return invoice;
   }
+
+  static async deleteQuotation(session, quotationId) {
+    const { business, tokens } = session;
+    const deleted = await GoogleSheetsRepository.deleteRow(
+      tokens,
+      business.spreadsheet_id || '',
+      'Quotations',
+      'quotation_id',
+      quotationId
+    );
+
+    await AuditLogService.logActivity(session, {
+      action: 'DELETE',
+      resource_type: 'Quotation',
+      resource_id: quotationId,
+      description: `Deleted quotation record`
+    });
+
+    return deleted;
+  }
 }

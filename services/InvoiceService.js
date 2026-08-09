@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
+import { AuditLogService } from './AuditLogService.js';
 
 export class InvoiceService {
   static async getInvoices(session) {
@@ -13,23 +14,10 @@ export class InvoiceService {
     const customers = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Customers');
     const customerMap = new Map((Array.isArray(customers) ? customers : []).map(c => [c.customer_id, c.customer_name]));
 
-    const today = new Date().toISOString().split('T')[0];
-
-    return invoices.map(inv => {
-      let status = inv.status;
-      const total = parseFloat(inv.total) || 0;
-      const paid = parseFloat(inv.paid_amount) || 0;
-
-      if (status !== 'Paid' && status !== 'Cancelled' && inv.due_date && inv.due_date < today && paid < total) {
-        status = 'Overdue';
-      }
-
-      return {
-        ...inv,
-        status,
-        customer_name: customerMap.get(inv.customer_id) || inv.customer_name || 'Customer'
-      };
-    });
+    return invoices.map(inv => ({
+      ...inv,
+      customer_name: customerMap.get(inv.customer_id) || inv.customer_name || 'Customer'
+    }));
   }
 
   static async getInvoiceById(session, invoiceId) {
@@ -37,20 +25,17 @@ export class InvoiceService {
     if (!business || !business.business_id) return null;
 
     const invoices = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Invoices');
-    const invoice = (Array.isArray(invoices) ? invoices : []).find(i => i && i.invoice_id === invoiceId && i.business_id === business.business_id);
+    const invoice = (Array.isArray(invoices) ? invoices : []).find(inv => inv && inv.invoice_id === invoiceId && inv.business_id === business.business_id);
     if (!invoice) return null;
 
     const rawItems = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'InvoiceItems');
     const items = (Array.isArray(rawItems) ? rawItems : []).filter(item => item && item.invoice_id === invoiceId);
 
-    const customers = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Customers');
-    const customer = (Array.isArray(customers) ? customers : []).find(c => c && c.customer_id === invoice.customer_id) || null;
-
     const rawPayments = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Payments');
     const payments = (Array.isArray(rawPayments) ? rawPayments : []).filter(p => p && p.invoice_id === invoiceId);
 
-    const businessProfile = (await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Business'))
-      .find(b => b && b.business_id === business.business_id) || business;
+    const customers = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Customers');
+    const customer = (Array.isArray(customers) ? customers : []).find(c => c && c.customer_id === invoice.customer_id) || null;
 
     const custName = customer ? customer.customer_name : (invoice.customer_name || 'Customer');
     const custCompany = customer ? customer.company_name : (invoice.customer_company || '');
@@ -64,7 +49,6 @@ export class InvoiceService {
       customer_address: custAddress,
       customer_tax_number: custTaxNumber,
       customer,
-      business: businessProfile,
       items,
       payments
     };
@@ -142,12 +126,19 @@ export class InvoiceService {
       await GoogleSheetsRepository.appendRow(tokens, business.spreadsheet_id || '', 'InvoiceItems', item);
     }
 
+    await AuditLogService.logActivity(session, {
+      action: 'CREATE',
+      resource_type: 'Invoice',
+      resource_id: invoiceId,
+      description: `Created Invoice #${invoiceNumber} (${business.currency || '$'}${grandTotal.toFixed(2)})`
+    });
+
     return invoiceRecord;
   }
 
   static async updateInvoice(session, invoiceId, invoiceData) {
     const { business, tokens } = session;
-    return GoogleSheetsRepository.updateRow(
+    const updated = await GoogleSheetsRepository.updateRow(
       tokens,
       business.spreadsheet_id || '',
       'Invoices',
@@ -155,5 +146,34 @@ export class InvoiceService {
       invoiceId,
       invoiceData
     );
+
+    await AuditLogService.logActivity(session, {
+      action: 'UPDATE',
+      resource_type: 'Invoice',
+      resource_id: invoiceId,
+      description: `Updated invoice details`
+    });
+
+    return updated;
+  }
+
+  static async deleteInvoice(session, invoiceId) {
+    const { business, tokens } = session;
+    const deleted = await GoogleSheetsRepository.deleteRow(
+      tokens,
+      business.spreadsheet_id || '',
+      'Invoices',
+      'invoice_id',
+      invoiceId
+    );
+
+    await AuditLogService.logActivity(session, {
+      action: 'DELETE',
+      resource_type: 'Invoice',
+      resource_id: invoiceId,
+      description: `Deleted invoice record`
+    });
+
+    return deleted;
   }
 }

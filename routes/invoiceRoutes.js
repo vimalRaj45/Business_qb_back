@@ -1,7 +1,7 @@
 import { InvoiceService } from '../services/InvoiceService.js';
 import { PaymentService } from '../services/PaymentService.js';
 import { UserEmailService } from '../services/UserEmailService.js';
-import { requireWebSession } from '../middleware/authMiddleware.js';
+import { requireWebSession, requireOwner } from '../middleware/authMiddleware.js';
 
 export async function invoiceRoutes(fastify, opts) {
   fastify.addHook('onRequest', requireWebSession);
@@ -72,6 +72,16 @@ export async function invoiceRoutes(fastify, opts) {
     } catch (err) {
       console.error('Error in PUT /api/invoices/:id:', err);
       return reply.status(500).send({ success: false, error: { code: 'INVOICE_UPDATE_ERROR', message: err.message } });
+    }
+  });
+
+  // Delete Invoice (Owner Only)
+  fastify.delete('/api/invoices/:id', { preHandler: [requireOwner] }, async (request, reply) => {
+    try {
+      await InvoiceService.deleteInvoice(request.session, request.params.id);
+      return { success: true, message: 'Invoice deleted successfully' };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'DELETE_FAILED', message: err.message } });
     }
   });
 }

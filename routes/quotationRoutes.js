@@ -1,6 +1,6 @@
 import { QuotationService } from '../services/QuotationService.js';
 import { UserEmailService } from '../services/UserEmailService.js';
-import { requireWebSession } from '../middleware/authMiddleware.js';
+import { requireWebSession, requireOwner } from '../middleware/authMiddleware.js';
 
 export async function quotationRoutes(fastify, opts) {
   fastify.addHook('onRequest', requireWebSession);
@@ -46,6 +46,16 @@ export async function quotationRoutes(fastify, opts) {
       return { success: true, message: res.message };
     } catch (err) {
       return reply.status(400).send({ success: false, error: { code: 'GMAIL_SEND_FAILED', message: err.message } });
+    }
+  });
+
+  // Delete Quotation (Owner Only)
+  fastify.delete('/api/quotations/:id', { preHandler: [requireOwner] }, async (request, reply) => {
+    try {
+      await QuotationService.deleteQuotation(request.session, request.params.id);
+      return { success: true, message: 'Quotation deleted successfully' };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'DELETE_FAILED', message: err.message } });
     }
   });
 }

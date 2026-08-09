@@ -1,12 +1,14 @@
 import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
 import { WebhookService } from './WebhookService.js';
+import { AuditLogService } from './AuditLogService.js';
 
 export class ExpenseService {
   static async getExpenses(session) {
     const { business, tokens } = session;
+    if (!business || !business.spreadsheet_id) return [];
     const rows = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Expenses');
-    return rows.filter(r => r.business_id === business.business_id);
+    return (Array.isArray(rows) ? rows : []).filter(r => r && r.business_id === business.business_id);
   }
 
   static async createExpense(session, expenseData) {
@@ -18,7 +20,7 @@ export class ExpenseService {
     const record = {
       expense_id: expenseId,
       business_id: business.business_id,
-      category: expenseData.category || 'Other', // Rent, Salary, Electricity, Internet, Transport, Marketing, Software, Purchase, Office Supplies, Other
+      category: expenseData.category || 'Other',
       description: expenseData.description || '',
       amount: String(amount.toFixed(2)),
       payment_method: expenseData.payment_method || 'Bank Transfer',
@@ -34,7 +36,7 @@ export class ExpenseService {
     // Create Transaction Ledger Entry (Expense)
     const transactionId = `txn_${crypto.randomBytes(6).toString('hex')}`;
     const allTransactions = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Transactions');
-    const prevBalance = allTransactions.reduce((acc, t) => {
+    const prevBalance = (Array.isArray(allTransactions) ? allTransactions : []).reduce((acc, t) => {
       const inc = parseFloat(t.income) || 0;
       const exp = parseFloat(t.expense) || 0;
       return acc + inc - exp;
@@ -59,8 +61,35 @@ export class ExpenseService {
 
     await GoogleSheetsRepository.appendRow(tokens, business.spreadsheet_id, 'Transactions', transactionRecord);
 
-    WebhookService.triggerEvent(session, 'expense.created', record).catch(() => {});
+    await AuditLogService.logActivity(session, {
+      action: 'CREATE',
+      resource_type: 'Expense',
+      resource_id: expenseId,
+      description: `Recorded expense "${record.category}" (${business.currency || '$'}${amount.toFixed(2)})`
+    });
+
+    WebhookService.triggerWebhooks(session, 'expense.created', record).catch(() => {});
 
     return record;
+  }
+
+  static async deleteExpense(session, expenseId) {
+    const { business, tokens } = session;
+    const deleted = await GoogleSheetsRepository.deleteRow(
+      tokens,
+      business.spreadsheet_id || '',
+      'Expenses',
+      'expense_id',
+      expenseId
+    );
+
+    await AuditLogService.logActivity(session, {
+      action: 'DELETE',
+      resource_type: 'Expense',
+      resource_id: expenseId,
+      description: `Deleted expense record`
+    });
+
+    return deleted;
   }
 }

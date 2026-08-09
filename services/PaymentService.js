@@ -2,22 +2,24 @@ import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
 import { InvoiceService } from './InvoiceService.js';
 import { WebhookService } from './WebhookService.js';
+import { AuditLogService } from './AuditLogService.js';
 
 export class PaymentService {
   static async getPayments(session) {
     const { business, tokens } = session;
+    if (!business || !business.spreadsheet_id) return [];
     const rows = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Payments');
-    const payments = rows.filter(r => r.business_id === business.business_id);
+    const payments = (Array.isArray(rows) ? rows : []).filter(r => r && r.business_id === business.business_id);
 
     const customers = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Customers');
-    const customerMap = new Map(customers.map(c => [c.customer_id, c.customer_name]));
+    const customerMap = new Map((Array.isArray(customers) ? customers : []).map(c => [c.customer_id, c.customer_name]));
 
     const invoices = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Invoices');
-    const invoiceMap = new Map(invoices.map(i => [i.invoice_id, i.invoice_number]));
+    const invoiceMap = new Map((Array.isArray(invoices) ? invoices : []).map(i => [i.invoice_id, i.invoice_number]));
 
     return payments.map(p => ({
       ...p,
-      customer_name: customerMap.get(p.customer_id) || 'Unknown Customer',
+      customer_name: customerMap.get(p.customer_id) || 'Customer',
       invoice_number: invoiceMap.get(p.invoice_id) || 'N/A'
     }));
   }
@@ -64,7 +66,7 @@ export class PaymentService {
       customer_id: invoice.customer_id,
       payment_date: paymentData.payment_date || now.split('T')[0],
       amount: String(amount.toFixed(2)),
-      payment_method: paymentData.payment_method || 'Bank Transfer', // Cash, UPI, Bank Transfer, Card, Cheque, Other
+      payment_method: paymentData.payment_method || 'Bank Transfer',
       reference_number: paymentData.reference_number || '',
       notes: paymentData.notes || '',
       created_at: now
@@ -75,7 +77,7 @@ export class PaymentService {
     // 3. Create Transaction Ledger Entry (Income)
     const transactionId = `txn_${crypto.randomBytes(6).toString('hex')}`;
     const allTransactions = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id, 'Transactions');
-    const prevBalance = allTransactions.reduce((acc, t) => {
+    const prevBalance = (Array.isArray(allTransactions) ? allTransactions : []).reduce((acc, t) => {
       const inc = parseFloat(t.income) || 0;
       const exp = parseFloat(t.expense) || 0;
       return acc + inc - exp;
@@ -100,12 +102,38 @@ export class PaymentService {
 
     await GoogleSheetsRepository.appendRow(tokens, business.spreadsheet_id, 'Transactions', transactionRecord);
 
-    // 4. Trigger Webhook
+    await AuditLogService.logActivity(session, {
+      action: 'CREATE',
+      resource_type: 'Payment',
+      resource_id: paymentId,
+      description: `Recorded payment of ${business.currency || '$'}${amount.toFixed(2)} for Invoice ${invoice.invoice_number}`
+    });
+
     WebhookService.triggerEvent(session, 'payment.created', paymentRecord).catch(() => {});
     if (newStatus === 'Paid') {
       WebhookService.triggerEvent(session, 'invoice.paid', { ...invoice, status: 'Paid' }).catch(() => {});
     }
 
     return paymentRecord;
+  }
+
+  static async deletePayment(session, paymentId) {
+    const { business, tokens } = session;
+    const deleted = await GoogleSheetsRepository.deleteRow(
+      tokens,
+      business.spreadsheet_id || '',
+      'Payments',
+      'payment_id',
+      paymentId
+    );
+
+    await AuditLogService.logActivity(session, {
+      action: 'DELETE',
+      resource_type: 'Payment',
+      resource_id: paymentId,
+      description: `Deleted payment record`
+    });
+
+    return deleted;
   }
 }
