@@ -205,7 +205,7 @@ export class AuthService {
       country: '',
       pincode: '',
       tax_number: '',
-      currency: 'USD $',
+      currency: 'INR ₹',
       logo_url: profile.picture || '',
       spreadsheet_id: '',
       invoice_prefix: 'INV-',

@@ -324,18 +324,27 @@ export class GoogleSheetsRepository {
   }
 
   static async deleteRow(tokens, spreadsheetId, tabName, keyName, keyValue) {
-    const cache = readCache();
-    if (cache[tabName]) {
-      cache[tabName] = cache[tabName].filter(item => String(item[keyName]) !== String(keyValue));
-      writeCache(cache);
+    let rows = [];
+    if (spreadsheetId && tokens && tokens.access_token) {
+      try {
+        rows = await this.getRows(tokens, spreadsheetId, tabName);
+      } catch (err) {
+        rows = readCache()[tabName] || [];
+      }
+    } else {
+      rows = readCache()[tabName] || [];
     }
+
+    const filtered = (Array.isArray(rows) ? rows : []).filter(r => r && String(r[keyName]) !== String(keyValue));
+
+    const cache = readCache();
+    cache[tabName] = filtered;
+    writeCache(cache);
 
     if (!spreadsheetId || !tokens || !tokens.access_token) return true;
 
     try {
-      const rows = await this.getRows(tokens, spreadsheetId, tabName);
-      const filtered = rows.filter(r => String(r[keyName]) !== String(keyValue));
-      const headers = TAB_SCHEMAS[tabName] || [];
+      const headers = TAB_SCHEMAS[tabName] || (filtered.length > 0 ? Object.keys(filtered[0]) : []);
 
       const { sheets } = getGoogleServices(tokens);
       await sheets.spreadsheets.values.clear({
@@ -343,7 +352,7 @@ export class GoogleSheetsRepository {
         range: `${tabName}!A2:Z5000`
       });
 
-      if (filtered.length > 0) {
+      if (filtered.length > 0 && headers.length > 0) {
         const values = filtered.map(r => headers.map(h => r[h] !== undefined ? r[h] : ''));
         await sheets.spreadsheets.values.update({
           spreadsheetId,
