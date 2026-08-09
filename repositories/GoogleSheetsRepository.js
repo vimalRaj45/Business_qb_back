@@ -127,9 +127,29 @@ export class GoogleSheetsRepository {
     if (!tokens || !tokens.access_token) return { spreadsheetId: '' };
 
     try {
-      const { sheets } = getGoogleServices(tokens);
+      const { sheets, drive } = getGoogleServices(tokens);
       let spreadsheetId = businessInfo.spreadsheet_id;
 
+      // 1. Search Google Drive for an existing billing spreadsheet if ID is missing
+      if (!spreadsheetId && drive) {
+        try {
+          const driveSearch = await drive.files.list({
+            q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false and name contains 'Business Billing Data'",
+            fields: 'files(id, name, createdTime)',
+            orderBy: 'createdTime desc',
+            pageSize: 5
+          });
+
+          if (driveSearch.data && driveSearch.data.files && driveSearch.data.files.length > 0) {
+            spreadsheetId = driveSearch.data.files[0].id;
+            console.log(`🔍 Found existing Google Spreadsheet in Drive: ${spreadsheetId}`);
+          }
+        } catch (searchErr) {
+          console.warn('Could not search Google Drive for existing spreadsheet:', searchErr.message);
+        }
+      }
+
+      // 2. Only create a NEW spreadsheet if none exists in Google Drive
       if (!spreadsheetId) {
         const resource = {
           properties: {
