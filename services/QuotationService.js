@@ -42,6 +42,7 @@ export class QuotationService {
 
     return {
       ...quotation,
+      business,
       customer_name: custName,
       customer_company: custCompany,
       customer_address: custAddress,

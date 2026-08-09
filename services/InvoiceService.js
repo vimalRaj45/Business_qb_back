@@ -44,6 +44,7 @@ export class InvoiceService {
 
     return {
       ...invoice,
+      business,
       customer_name: custName,
       customer_company: custCompany,
       customer_address: custAddress,
