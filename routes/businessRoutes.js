@@ -18,6 +18,20 @@ export async function businessRoutes(fastify, opts) {
     return { success: true, data: updated };
   });
 
+  // Complete Business Onboarding Setup
+  fastify.post('/api/business/onboarding', async (request, reply) => {
+    try {
+      const updated = await BusinessService.completeOnboarding(request.session, request.body || {});
+      return { success: true, data: updated, message: 'Business onboarding completed successfully!' };
+    } catch (err) {
+      console.error('Onboarding error:', err);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'ONBOARDING_FAILED', message: err.message }
+      });
+    }
+  });
+
   // Delete Business Account & Google Drive File (Owner Only)
   fastify.delete('/api/business', { preHandler: [requireOwner] }, async (request, reply) => {
     try {
