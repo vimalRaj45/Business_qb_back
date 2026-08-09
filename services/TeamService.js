@@ -19,7 +19,7 @@ export class TeamService {
 
     if (!Array.isArray(rows)) return [];
 
-    return rows.filter(r => r && r.business_id === business.business_id);
+    return rows.filter(r => r && r.business_id === business.business_id && r.status !== 'deleted');
   }
 
   /**
@@ -103,32 +103,42 @@ export class TeamService {
   }
 
   /**
-   * Revoke team member access
+   * Delete team member invitation / revoke access
    */
   static async removeMember(session, memberId) {
     const { business, tokens } = session;
     const members = await this.getTeamMembers(session);
     const target = members.find(m => m.member_id === memberId);
     
-    if (!target) throw new Error('Team member not found');
-    if (target.role === 'owner') throw new Error('Cannot remove primary business owner.');
+    if (!target) throw new Error('Team member invitation not found');
+    if (target.role === 'owner') throw new Error('Cannot delete primary business owner.');
 
-    await GoogleSheetsRepository.updateRow(
+    // Delete row from Google Sheets TeamMembers tab
+    await GoogleSheetsRepository.deleteRow(
       tokens,
       business.spreadsheet_id || '',
       'TeamMembers',
       'member_id',
-      memberId,
-      { status: 'revoked', updated_at: new Date().toISOString() }
-    );
+      memberId
+    ).catch(async () => {
+      // Fallback: update status to deleted if sheet deleteRow fails
+      await GoogleSheetsRepository.updateRow(
+        tokens,
+        business.spreadsheet_id || '',
+        'TeamMembers',
+        'member_id',
+        memberId,
+        { status: 'deleted', updated_at: new Date().toISOString() }
+      );
+    });
 
     await AuditLogService.logActivity(session, {
       action: 'DELETE',
       resource_type: 'Team',
       resource_id: memberId,
-      description: `Revoked team access for ${target.email}`
+      description: `Deleted team invitation / access for ${target.email}`
     });
 
-    return { success: true, message: `Access revoked for ${target.email}` };
+    return { success: true, message: `Team invitation deleted for ${target.email}` };
   }
 }
