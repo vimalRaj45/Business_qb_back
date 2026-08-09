@@ -104,16 +104,8 @@ export class AuthService {
     const googleId = profile.id;
     const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
 
-    let spreadsheetId = '';
-    try {
-      const sheetRes = await GoogleSheetsRepository.ensureBusinessSpreadsheet(tokens, {
-        business_name: `${profile.name || 'My'}'s Business`,
-        owner_google_id: googleId
-      });
-      spreadsheetId = sheetRes.spreadsheetId;
-    } catch (err) {
-      console.error('⚠️ Warning: Could not create Google Spreadsheet on login:', err.message);
-    }
+    // Check local cache first to reuse existing spreadsheet_id and business profile
+    const cachedBusiness = getLocalCachedBusiness(googleId);
 
     const now = new Date().toISOString();
     let business = {
@@ -131,7 +123,7 @@ export class AuthService {
       tax_number: '',
       currency: 'USD $',
       logo_url: profile.picture || '',
-      spreadsheet_id: spreadsheetId,
+      spreadsheet_id: '',
       invoice_prefix: 'INV-',
       quotation_prefix: 'QUO-',
       onboarding_completed: false,
@@ -139,10 +131,23 @@ export class AuthService {
       updated_at: now
     };
 
-    // Check local cache first
-    const cachedBusiness = getLocalCachedBusiness(googleId);
     if (cachedBusiness) {
       business = { ...business, ...cachedBusiness };
+    }
+
+    let spreadsheetId = business.spreadsheet_id || '';
+    try {
+      const sheetRes = await GoogleSheetsRepository.ensureBusinessSpreadsheet(tokens, {
+        spreadsheet_id: spreadsheetId,
+        business_name: business.business_name || `${profile.name || 'My'}'s Business`,
+        owner_google_id: googleId
+      });
+      if (sheetRes && sheetRes.spreadsheetId) {
+        spreadsheetId = sheetRes.spreadsheetId;
+        business.spreadsheet_id = spreadsheetId;
+      }
+    } catch (err) {
+      console.error('⚠️ Warning: Could not create Google Spreadsheet on login:', err.message);
     }
 
     // Check Google Sheets
@@ -161,14 +166,13 @@ export class AuthService {
     // Determine onboarding completion status
     const isCompleted = String(business.onboarding_completed) === 'true' || 
                         business.onboarding_completed === true || 
+                        business.created_at === 'TRUE' ||
                         (Boolean(business.business_name) && business.business_name.trim() !== '' && !business.business_name.endsWith("'s Business"));
 
     business.onboarding_completed = isCompleted;
 
-    // Save initial row if not existing
-    if (spreadsheetId) {
-      await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', business.business_id, business).catch(() => {});
-    }
+    // Save/update row to cache and sheet
+    await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', business.business_id, business).catch(() => {});
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const sessionData = {

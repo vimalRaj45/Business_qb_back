@@ -37,19 +37,17 @@ export class BusinessService {
     Object.assign(session.business, merged);
     AuthService.saveSession(session.sessionToken, session);
 
-    if (business.spreadsheet_id) {
-      try {
-        await GoogleSheetsRepository.updateRow(
-          tokens,
-          business.spreadsheet_id,
-          'Business',
-          'business_id',
-          business.business_id,
-          merged
-        );
-      } catch (err) {
-        console.warn('Could not update Google Sheet business row:', err.message);
-      }
+    try {
+      await GoogleSheetsRepository.updateRow(
+        tokens,
+        business.spreadsheet_id || '',
+        'Business',
+        'business_id',
+        business.business_id,
+        merged
+      );
+    } catch (err) {
+      console.warn('Could not update Google Sheet business row:', err.message);
     }
 
     return session.business;

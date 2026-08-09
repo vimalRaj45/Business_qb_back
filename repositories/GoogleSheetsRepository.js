@@ -196,6 +196,16 @@ export class GoogleSheetsRepository {
         headers.forEach((header, index) => {
           obj[header] = row[index] !== undefined ? row[index] : '';
         });
+        if (tabName === 'Business') {
+          const isCompleted = String(obj.onboarding_completed) === 'true' || 
+                              obj.onboarding_completed === true || 
+                              obj.created_at === 'TRUE' ||
+                              (Boolean(obj.business_name) && obj.business_name.trim() !== '' && !obj.business_name.endsWith("'s Business"));
+          obj.onboarding_completed = isCompleted;
+          if (obj.created_at === 'TRUE') {
+            obj.created_at = new Date().toISOString();
+          }
+        }
         return obj;
       });
 
@@ -252,14 +262,21 @@ export class GoogleSheetsRepository {
     try {
       const rows = await this.getRows(tokens, spreadsheetId, tabName);
       const rowIndex = rows.findIndex(r => String(r[keyName]) === String(keyValue));
-      const headers = TAB_SCHEMAS[tabName] || Object.keys(updatedData);
+      const schemaHeaders = TAB_SCHEMAS[tabName] || Object.keys(updatedData);
+
+      const { sheets } = getGoogleServices(tokens);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${tabName}!A1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [schemaHeaders] }
+      }).catch(() => {});
 
       if (rowIndex !== -1) {
         const sheetRowNumber = rowIndex + 2;
         const mergedRow = { ...rows[rowIndex], ...updatedData };
-        const rowValues = headers.map(h => mergedRow[h] !== undefined ? mergedRow[h] : '');
+        const rowValues = schemaHeaders.map(h => mergedRow[h] !== undefined ? mergedRow[h] : '');
 
-        const { sheets } = getGoogleServices(tokens);
         await sheets.spreadsheets.values.update({
           spreadsheetId,
           range: `${tabName}!A${sheetRowNumber}`,
