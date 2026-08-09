@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
+import { AuditLogService } from './AuditLogService.js';
 
 export class CustomerService {
   static async getCustomers(session) {
@@ -83,12 +84,20 @@ export class CustomerService {
     };
 
     await GoogleSheetsRepository.appendRow(tokens, business ? business.spreadsheet_id : '', 'Customers', record);
+
+    await AuditLogService.logActivity(session, {
+      action: 'CREATE',
+      resource_type: 'Customer',
+      resource_id: customerId,
+      description: `Created customer "${record.customer_name}"`
+    });
+
     return record;
   }
 
   static async updateCustomer(session, customerId, customerData) {
     const { business, tokens } = session;
-    return GoogleSheetsRepository.updateRow(
+    const updated = await GoogleSheetsRepository.updateRow(
       tokens,
       business ? business.spreadsheet_id : '',
       'Customers',
@@ -96,16 +105,34 @@ export class CustomerService {
       customerId,
       customerData
     );
+
+    await AuditLogService.logActivity(session, {
+      action: 'UPDATE',
+      resource_type: 'Customer',
+      resource_id: customerId,
+      description: `Updated customer details`
+    });
+
+    return updated;
   }
 
   static async deleteCustomer(session, customerId) {
     const { business, tokens } = session;
-    return GoogleSheetsRepository.deleteRow(
+    const deleted = await GoogleSheetsRepository.deleteRow(
       tokens,
       business ? business.spreadsheet_id : '',
       'Customers',
       'customer_id',
       customerId
     );
+
+    await AuditLogService.logActivity(session, {
+      action: 'DELETE',
+      resource_type: 'Customer',
+      resource_id: customerId,
+      description: `Deleted customer record`
+    });
+
+    return deleted;
   }
 }

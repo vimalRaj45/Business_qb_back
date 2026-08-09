@@ -25,6 +25,22 @@ export async function requireWebSession(request, reply) {
   request.session = session;
 }
 
+export async function requireOwner(request, reply) {
+  if (!request.session) return;
+  const role = request.session.role || (request.session.business?.owner_google_id === request.session.user?.googleId ? 'owner' : 'member');
+  const isOwner = role === 'owner' || request.session.business?.owner_google_id === request.session.user?.googleId;
+
+  if (!isOwner) {
+    return reply.status(403).send({
+      success: false,
+      error: {
+        code: 'FORBIDDEN_OWNER_REQUIRED',
+        message: 'Owner permission required. Staff members cannot delete records or manage team settings.'
+      }
+    });
+  }
+}
+
 export async function requireApiKey(request, reply) {
   const authHeader = request.headers.authorization;
 

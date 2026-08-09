@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
 import { InvoiceService } from './InvoiceService.js';
+import { AuditLogService } from './AuditLogService.js';
 
 export class QuotationService {
   static async getQuotations(session) {
@@ -119,6 +120,13 @@ export class QuotationService {
       await GoogleSheetsRepository.appendRow(tokens, business.spreadsheet_id || '', 'QuotationItems', item);
     }
 
+    await AuditLogService.logActivity(session, {
+      action: 'CREATE',
+      resource_type: 'Quotation',
+      resource_id: quotationId,
+      description: `Created Quotation #${quotationNumber} (${business.currency || '$'}${grandTotal.toFixed(2)})`
+    });
+
     return quotationRecord;
   }
 
@@ -147,6 +155,13 @@ export class QuotationService {
       quotationId,
       { status: 'Converted' }
     );
+
+    await AuditLogService.logActivity(session, {
+      action: 'UPDATE',
+      resource_type: 'Quotation',
+      resource_id: quotationId,
+      description: `Converted Quotation #${quotation.quotation_number} to Invoice`
+    });
 
     return invoice;
   }

@@ -1,4 +1,5 @@
 import { QuotationService } from '../services/QuotationService.js';
+import { UserEmailService } from '../services/UserEmailService.js';
 import { requireWebSession } from '../middleware/authMiddleware.js';
 
 export async function quotationRoutes(fastify, opts) {
@@ -34,6 +35,17 @@ export async function quotationRoutes(fastify, opts) {
       return { success: true, data: invoice, message: 'Quotation successfully converted to Invoice' };
     } catch (err) {
       return reply.status(400).send({ success: false, error: { code: 'CONVERSION_FAILED', message: err.message } });
+    }
+  });
+
+  // Send Quotation Email via logged-in user's Gmail
+  fastify.post('/api/quotations/:id/send-email', async (request, reply) => {
+    try {
+      const { email } = request.body || {};
+      const res = await UserEmailService.sendQuotationEmail(request.session, request.params.id, email);
+      return { success: true, message: res.message };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'GMAIL_SEND_FAILED', message: err.message } });
     }
   });
 }

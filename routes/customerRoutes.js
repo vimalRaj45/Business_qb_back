@@ -1,5 +1,5 @@
 import { CustomerService } from '../services/CustomerService.js';
-import { requireWebSession } from '../middleware/authMiddleware.js';
+import { requireWebSession, requireOwner } from '../middleware/authMiddleware.js';
 
 export async function customerRoutes(fastify, opts) {
   fastify.addHook('onRequest', requireWebSession);
@@ -27,7 +27,7 @@ export async function customerRoutes(fastify, opts) {
     return { success: true, data: updated };
   });
 
-  fastify.delete('/api/customers/:id', async (request, reply) => {
+  fastify.delete('/api/customers/:id', { preHandler: [requireOwner] }, async (request, reply) => {
     await CustomerService.deleteCustomer(request.session, request.params.id);
     return { success: true, message: 'Customer deleted' };
   });

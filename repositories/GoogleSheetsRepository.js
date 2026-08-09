@@ -70,6 +70,13 @@ export const TAB_SCHEMAS = {
   WebhookLogs: [
     'log_id', 'webhook_id', 'event', 'payload', 'status_code', 'response', 
     'attempt', 'created_at'
+  ],
+  TeamMembers: [
+    'member_id', 'business_id', 'email', 'name', 'role', 'status', 'invited_by', 'created_at', 'updated_at'
+  ],
+  ActivityLogs: [
+    'log_id', 'business_id', 'user_google_id', 'user_name', 'user_email', 'user_role', 
+    'action', 'resource_type', 'resource_id', 'description', 'created_at'
   ]
 };
 

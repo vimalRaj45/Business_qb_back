@@ -5,7 +5,8 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/spreadsheets',
-  'https://www.googleapis.com/auth/drive.file'
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/gmail.send'
 ];
 
 export function getOAuth2Client(customRedirectUri) {
@@ -25,6 +26,7 @@ export function getGoogleServices(tokens = {}) {
 
   const sheets = google.sheets({ version: 'v4', auth: client });
   const drive = google.drive({ version: 'v3', auth: client });
+  const gmail = google.gmail({ version: 'v1', auth: client });
 
-  return { oauth2Client: client, sheets, drive };
+  return { oauth2Client: client, sheets, drive, gmail };
 }

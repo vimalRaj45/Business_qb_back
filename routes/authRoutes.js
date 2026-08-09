@@ -43,7 +43,8 @@ export async function authRoutes(fastify, opts) {
         sessionToken: session.sessionToken,
         onboarding_completed: session.business.onboarding_completed,
         user: session.user,
-        business: session.business
+        business: session.business,
+        role: session.role || 'owner'
       };
     } catch (err) {
       console.error('OAuth Exchange error:', err);
@@ -104,7 +105,8 @@ export async function authRoutes(fastify, opts) {
       success: true,
       authenticated: true,
       user: session.user,
-      business: session.business
+      business: session.business,
+      role: session.role || (session.business?.owner_google_id === session.user?.googleId ? 'owner' : 'member')
     };
   });
 

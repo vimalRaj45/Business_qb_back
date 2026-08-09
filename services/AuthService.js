@@ -102,9 +102,72 @@ export class AuthService {
 
   static async createOrGetUserSession(profile, tokens) {
     const googleId = profile.id;
-    const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
+    const email = profile.email ? profile.email.toLowerCase().trim() : '';
+    let role = 'owner';
 
-    // Check local cache first to reuse existing spreadsheet_id and business profile
+    // Check if user is an invited Team Member in any active session business
+    let targetBusiness = null;
+    let targetTokens = tokens;
+
+    for (const [, existingSession] of SESSIONS.entries()) {
+      if (existingSession && existingSession.business && existingSession.tokens) {
+        try {
+          const members = await GoogleSheetsRepository.getRows(
+            existingSession.tokens,
+            existingSession.business.spreadsheet_id || '',
+            'TeamMembers'
+          );
+          const match = (Array.isArray(members) ? members : []).find(
+            m => m && m.email && m.email.toLowerCase().trim() === email && m.status !== 'revoked'
+          );
+
+          if (match) {
+            targetBusiness = existingSession.business;
+            targetTokens = existingSession.tokens; // Use workspace spreadsheet tokens
+            role = match.role || 'member';
+
+            // Mark invite active if pending
+            if (match.status === 'pending') {
+              await GoogleSheetsRepository.updateRow(
+                existingSession.tokens,
+                existingSession.business.spreadsheet_id,
+                'TeamMembers',
+                'member_id',
+                match.member_id,
+                { status: 'active', updated_at: new Date().toISOString() }
+              ).catch(() => {});
+            }
+            break;
+          }
+        } catch (err) {
+          // ignore error reading team members from another session
+        }
+      }
+    }
+
+    if (targetBusiness) {
+      const sessionToken = crypto.randomBytes(32).toString('hex');
+      const sessionData = {
+        sessionToken,
+        user: {
+          googleId,
+          email: profile.email || '',
+          name: profile.name || 'Team Member',
+          picture: profile.picture || ''
+        },
+        business: targetBusiness,
+        tokens: targetTokens,
+        role,
+        createdAt: Date.now()
+      };
+
+      SESSIONS.set(sessionToken, sessionData);
+      saveSessionsToDisk(SESSIONS);
+      return sessionData;
+    }
+
+    // Default Owner Flow
+    const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
     const cachedBusiness = getLocalCachedBusiness(googleId);
 
     const now = new Date().toISOString();
@@ -150,7 +213,7 @@ export class AuthService {
       console.error('⚠️ Warning: Could not create Google Spreadsheet on login:', err.message);
     }
 
-    // Check Google Sheets
+    // Check Google Sheets for existing business
     if (spreadsheetId) {
       try {
         const businesses = await GoogleSheetsRepository.getRows(tokens, spreadsheetId, 'Business');
@@ -166,13 +229,14 @@ export class AuthService {
     // Determine onboarding completion status
     const isCompleted = String(business.onboarding_completed) === 'true' || 
                         business.onboarding_completed === true || 
-                        business.created_at === 'TRUE' ||
                         (Boolean(business.business_name) && business.business_name.trim() !== '' && !business.business_name.endsWith("'s Business"));
 
     business.onboarding_completed = isCompleted;
 
-    // Save/update row to cache and sheet
-    await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', business.business_id, business).catch(() => {});
+    // Save initial row if not existing
+    if (spreadsheetId) {
+      await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', business.business_id, business).catch(() => {});
+    }
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const sessionData = {
@@ -185,6 +249,7 @@ export class AuthService {
       },
       business,
       tokens,
+      role: 'owner',
       createdAt: Date.now()
     };
 

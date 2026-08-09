@@ -1,5 +1,5 @@
 import { ProductService } from '../services/ProductService.js';
-import { requireWebSession } from '../middleware/authMiddleware.js';
+import { requireWebSession, requireOwner } from '../middleware/authMiddleware.js';
 
 export async function productRoutes(fastify, opts) {
   fastify.addHook('onRequest', requireWebSession);
@@ -43,7 +43,7 @@ export async function productRoutes(fastify, opts) {
     }
   });
 
-  fastify.delete('/api/products/:id', async (request, reply) => {
+  fastify.delete('/api/products/:id', { preHandler: [requireOwner] }, async (request, reply) => {
     try {
       await ProductService.deleteProduct(request.session, request.params.id);
       return { success: true, message: 'Product deleted' };

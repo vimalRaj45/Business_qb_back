@@ -1,5 +1,6 @@
 import { InvoiceService } from '../services/InvoiceService.js';
 import { PaymentService } from '../services/PaymentService.js';
+import { UserEmailService } from '../services/UserEmailService.js';
 import { requireWebSession } from '../middleware/authMiddleware.js';
 
 export async function invoiceRoutes(fastify, opts) {
@@ -50,6 +51,17 @@ export async function invoiceRoutes(fastify, opts) {
     } catch (err) {
       console.error('Error in POST /api/invoices/:id/payments:', err);
       return reply.status(400).send({ success: false, error: { code: 'PAYMENT_FAILED', message: err.message } });
+    }
+  });
+
+  // Send Invoice Email via logged-in user's Gmail
+  fastify.post('/api/invoices/:id/send-email', async (request, reply) => {
+    try {
+      const { email } = request.body || {};
+      const res = await UserEmailService.sendInvoiceEmail(request.session, request.params.id, email);
+      return { success: true, message: res.message };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'GMAIL_SEND_FAILED', message: err.message } });
     }
   });
 
