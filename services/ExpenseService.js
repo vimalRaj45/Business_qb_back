@@ -68,7 +68,7 @@ export class ExpenseService {
       description: `Recorded expense "${record.category}" (${business.currency || '$'}${amount.toFixed(2)})`
     });
 
-    WebhookService.triggerWebhooks(session, 'expense.created', record).catch(() => {});
+    WebhookService.triggerEvent(session, 'expense.created', record).catch(() => {});
 
     return record;
   }

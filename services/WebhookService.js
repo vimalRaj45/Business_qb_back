@@ -49,7 +49,9 @@ export class WebhookService {
    * Triggers event and dispatches HTTP POST requests to matching active webhooks with HMAC signatures
    */
   static async triggerEvent(session, eventName, payload) {
-    const webhooks = await this.getWebhooks(session);
+    const webhooks = await this.getWebhooks(session).catch(() => []);
+    if (!Array.isArray(webhooks) || !webhooks.length) return;
+
     const activeWebhooks = webhooks.filter(w => {
       if (w.status !== 'Active') return false;
       try {
@@ -68,46 +70,52 @@ export class WebhookService {
 
     for (const hook of activeWebhooks) {
       // Calculate HMAC signature
-      const signature = crypto.createHmac('sha256', hook.secret).update(bodyString).digest('hex');
+      const signature = crypto.createHmac('sha256', hook.secret || 'secret').update(bodyString).digest('hex');
 
       let statusCode = 200;
-      let responseText = 'OK (Simulated Dispatch)';
-      let attempt = 1;
+      let responseText = 'OK';
 
       try {
-        // Attempt fetch if valid URL format
-        if (hook.url.startsWith('http')) {
+        if (hook.url && hook.url.startsWith('http')) {
           const res = await fetch(hook.url, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'X-Webhook-Signature': signature
+              'X-BizSheet-Signature': signature,
+              'X-BizSheet-Event': eventName
             },
             body: bodyString,
             signal: AbortSignal.timeout(5000)
           });
           statusCode = res.status;
-          responseText = await res.text();
+          responseText = await res.text().catch(() => '');
         }
       } catch (err) {
         statusCode = 500;
-        responseText = err.message;
+        responseText = err.message || 'Fetch failed';
       }
 
       // Log attempt
-      const logId = `whlog_${crypto.randomBytes(6).toString('hex')}`;
       const logRecord = {
-        log_id: logId,
+        log_id: `whlog_${crypto.randomBytes(6).toString('hex')}`,
         webhook_id: hook.webhook_id,
         event: eventName,
         payload: bodyString.substring(0, 500),
         status_code: String(statusCode),
-        response: responseText.substring(0, 200),
-        attempt: String(attempt),
+        response: String(responseText).substring(0, 200),
+        attempt: '1',
         created_at: new Date().toISOString()
       };
 
       GoogleSheetsRepository.appendRow(session.tokens, session.business.spreadsheet_id, 'WebhookLogs', logRecord).catch(() => {});
     }
+  }
+
+  static async triggerWebhooks(session, eventName, payload) {
+    return this.triggerEvent(session, eventName, payload);
+  }
+
+  static async triggerWebhook(session, eventName, payload) {
+    return this.triggerEvent(session, eventName, payload);
   }
 }
