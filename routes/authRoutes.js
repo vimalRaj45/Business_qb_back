@@ -48,9 +48,13 @@ export async function authRoutes(fastify, opts) {
       };
     } catch (err) {
       console.error('OAuth Exchange error:', err);
+      let userMsg = err.message || 'OAuth exchange failed';
+      if (userMsg.includes('invalid_grant') || userMsg.includes('Bad Request') || userMsg.includes('400')) {
+        userMsg = 'OAuth code expired or already used. Please click "Sign in with Google" again.';
+      }
       return reply.status(400).send({
         success: false,
-        error: { code: 'OAUTH_EXCHANGE_FAILED', message: err.message }
+        error: { code: 'OAUTH_EXCHANGE_FAILED', message: userMsg }
       });
     }
   });
@@ -87,7 +91,7 @@ export async function authRoutes(fastify, opts) {
       return reply.redirect(redirectTarget);
     } catch (err) {
       console.error('OAuth Callback Route Failure Details:', err);
-      const errMsg = encodeURIComponent(err.message || 'oauth_failed');
+      const errMsg = encodeURIComponent('OAuth session expired. Please sign in again.');
       return reply.redirect(`${env.FRONTEND_URL}/login.html?error=${errMsg}`);
     }
   });
