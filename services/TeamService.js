@@ -58,8 +58,10 @@ export class TeamService {
       memberRecord
     );
 
-    // Send invitation email via Owner's Gmail
-    const inviteLink = `${session.business.frontend_url || 'https://business-qb-front.pages.dev'}/login.html`;
+    // Send invitation email via Owner's Gmail with target invite_biz parameter
+    const baseUrl = business.frontend_url || 'https://business-qb-front.pages.dev';
+    const inviteLink = `${baseUrl}/login.html?invite_biz=${business.business_id}`;
+    
     const htmlBody = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; background: #ffffff;">
         <div style="border-bottom: 2px solid #0d9488; padding-bottom: 16px; margin-bottom: 20px;">
@@ -67,14 +69,14 @@ export class TeamService {
         </div>
         <h3 style="margin-top: 0;">You're Invited to Join Our Billing Workspace</h3>
         <p>Hello,</p>
-        <p><strong>${user?.name || business.business_name}</strong> (${user?.email || ''}) has invited you to join their business workspace as a <strong>${role === 'owner' ? 'Owner' : 'Staff Member'}</strong>.</p>
+        <p><strong>${user?.name || business.business_name}</strong> (${user?.email || ''}) has invited you to join <strong>${business.business_name}</strong> as a <strong>${role === 'owner' ? 'Owner' : 'Staff Member'}</strong>.</p>
         
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: center;">
-          <p style="margin: 0 0 12px 0; font-size: 13px; color: #64748b;">Log in using your Google account (${cleanEmail}) to access the shared business ledger:</p>
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #64748b;">Sign in with your Google account (${cleanEmail}) to open this shared business workspace:</p>
           <a href="${inviteLink}" style="display: inline-block; background: #0d9488; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; font-size: 14px;">Accept Invitation & Sign In</a>
         </div>
 
-        <p style="font-size: 11px; color: #94a3b8; text-align: center;">Note: As a Staff Member, you will have creation & editing rights without delete access.</p>
+        <p style="font-size: 11px; color: #94a3b8; text-align: center;">Note: If you already own another business, you can easily switch between companies using the Workspace Switcher in your header.</p>
       </div>
     `;
 

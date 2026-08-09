@@ -16,10 +16,10 @@ export async function authRoutes(fastify, opts) {
     }
   });
 
-  // Frontend OAuth Code Exchange endpoint
+  // Frontend OAuth Code Exchange endpoint (supports invite_biz target)
   fastify.post('/api/auth/google/exchange', async (request, reply) => {
     try {
-      const { code, redirect_uri } = request.body || {};
+      const { code, redirect_uri, invite_biz } = request.body || {};
       if (!code) {
         return reply.status(400).send({
           success: false,
@@ -27,7 +27,7 @@ export async function authRoutes(fastify, opts) {
         });
       }
 
-      const session = await AuthService.handleOAuthCallback(code, redirect_uri);
+      const session = await AuthService.handleOAuthCallback(code, redirect_uri, invite_biz);
       const isProd = env.NODE_ENV === 'production';
 
       reply.setCookie('session_token', session.sessionToken, {
@@ -60,66 +60,7 @@ export async function authRoutes(fastify, opts) {
     }
   });
 
-  // Switch Workspace Endpoint
-  fastify.post('/api/auth/switch-workspace', async (request, reply) => {
-    try {
-      const sessionToken = request.cookies.session_token || request.headers.authorization?.replace('Bearer ', '');
-      const { business_id } = request.body || {};
-
-      if (!business_id) {
-        return reply.status(400).send({ success: false, error: { message: 'Target business_id is required' } });
-      }
-
-      const session = await AuthService.switchWorkspace(sessionToken, business_id);
-      return {
-        success: true,
-        message: `Switched active workspace to ${session.business.business_name || 'Selected Business'}`,
-        business: session.business,
-        role: session.role
-      };
-    } catch (err) {
-      return reply.status(400).send({ success: false, error: { code: 'SWITCH_FAILED', message: err.message } });
-    }
-  });
-
-  // Backend direct OAuth Callback fallback
-  fastify.get('/api/auth/google/callback', async (request, reply) => {
-    const { code, error } = request.query;
-
-    if (error) {
-      console.error('Google OAuth Error Query Param:', error);
-      return reply.redirect(`${env.FRONTEND_URL}/login.html?error=${encodeURIComponent(error)}`);
-    }
-
-    if (!code) {
-      return reply.redirect(`${env.FRONTEND_URL}/login.html?error=missing_code`);
-    }
-
-    try {
-      const session = await AuthService.handleOAuthCallback(code);
-      const isProd = env.NODE_ENV === 'production';
-
-      reply.setCookie('session_token', session.sessionToken, {
-        path: '/',
-        httpOnly: true,
-        secure: isProd,
-        sameSite: isProd ? 'none' : 'lax',
-        maxAge: 30 * 24 * 60 * 60
-      });
-
-      const redirectTarget = session.business.onboarding_completed 
-        ? `${env.FRONTEND_URL}/dashboard.html` 
-        : `${env.FRONTEND_URL}/onboarding.html`;
-
-      return reply.redirect(redirectTarget);
-    } catch (err) {
-      console.error('OAuth Callback Route Failure Details:', err);
-      const errMsg = encodeURIComponent('OAuth session expired. Please sign in again.');
-      return reply.redirect(`${env.FRONTEND_URL}/login.html?error=${errMsg}`);
-    }
-  });
-
-  // Get Current User Profile & Business Details
+  // Get Current User Profile, Active Business, Role & Workspaces
   fastify.get('/api/auth/me', async (request, reply) => {
     const sessionToken = request.cookies.session_token || request.headers.authorization?.replace('Bearer ', '');
     const session = AuthService.getSession(sessionToken);
@@ -136,6 +77,32 @@ export async function authRoutes(fastify, opts) {
       role: session.role || (session.business?.owner_google_id === session.user?.googleId ? 'owner' : 'member'),
       workspaces: session.workspaces || []
     };
+  });
+
+  // Switch Active Workspace
+  fastify.post('/api/auth/switch-workspace', async (request, reply) => {
+    const sessionToken = request.cookies.session_token || request.headers.authorization?.replace('Bearer ', '');
+    if (!sessionToken) {
+      return reply.status(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } });
+    }
+
+    try {
+      const { business_id } = request.body || {};
+      if (!business_id) {
+        return reply.status(400).send({ success: false, error: { code: 'MISSING_BIZ_ID', message: 'Target business_id is required' } });
+      }
+
+      const updatedSession = AuthService.switchWorkspace(sessionToken, business_id);
+      return {
+        success: true,
+        message: `Switched to workspace: ${updatedSession.business.business_name || 'Business'}`,
+        business: updatedSession.business,
+        role: updatedSession.role,
+        workspaces: updatedSession.workspaces
+      };
+    } catch (err) {
+      return reply.status(400).send({ success: false, error: { code: 'SWITCH_FAILED', message: err.message } });
+    }
   });
 
   // Logout

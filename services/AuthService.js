@@ -72,7 +72,7 @@ export class AuthService {
     return oauth2Client.generateAuthUrl(options);
   }
 
-  static async handleOAuthCallback(code, customRedirectUri) {
+  static async handleOAuthCallback(code, customRedirectUri, targetInviteBiz = '') {
     try {
       const oauth2Client = getOAuth2Client(customRedirectUri);
       let tokenRes;
@@ -93,28 +93,26 @@ export class AuthService {
         throw new Error('Could not fetch user profile from Google OAuth');
       }
 
-      return await this.createOrGetUserSession(profile, tokens);
+      return await this.createOrGetUserSession(profile, tokens, targetInviteBiz);
     } catch (err) {
       console.error('❌ AuthService.handleOAuthCallback error:', err);
       throw err;
     }
   }
 
-  static async createOrGetUserSession(profile, tokens) {
+  static async createOrGetUserSession(profile, tokens, targetInviteBiz = '') {
     const googleId = profile.id;
     const email = profile.email ? profile.email.toLowerCase().trim() : '';
 
-    const availableWorkspaces = [];
-
-    // 1. Build Owned Business Workspace
-    const ownedBusinessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
+    // 1. Ensure user's own business (Owner Business)
+    const businessId = `biz_${crypto.createHash('md5').update(googleId).digest('hex').substring(0, 12)}`;
     const cachedBusiness = getLocalCachedBusiness(googleId);
     const now = new Date().toISOString();
 
     let ownedBusiness = {
-      business_id: ownedBusinessId,
+      business_id: businessId,
       owner_google_id: googleId,
-      business_name: `${profile.name || 'My'}'s Business`,
+      business_name: '',
       business_type: '',
       email: profile.email || '',
       phone: '',
@@ -156,7 +154,7 @@ export class AuthService {
     if (spreadsheetId) {
       try {
         const businesses = await GoogleSheetsRepository.getRows(tokens, spreadsheetId, 'Business');
-        const existing = businesses.find(b => b.owner_google_id === googleId || b.business_id === ownedBusinessId || b.email === profile.email);
+        const existing = businesses.find(b => b.owner_google_id === googleId || b.business_id === businessId || b.email === profile.email);
         if (existing) {
           ownedBusiness = { ...ownedBusiness, ...existing };
         }
@@ -175,17 +173,11 @@ export class AuthService {
       await GoogleSheetsRepository.updateRow(tokens, spreadsheetId, 'Business', 'business_id', ownedBusiness.business_id, ownedBusiness).catch(() => {});
     }
 
-    availableWorkspaces.push({
-      business_id: ownedBusiness.business_id,
-      business_name: ownedBusiness.business_name || 'My Business',
-      role: 'owner',
-      business: ownedBusiness,
-      tokens
-    });
+    // 2. Discover all joined workspaces where user's email is an accepted team member
+    const joinedWorkspaces = [];
 
-    // 2. Search all existing sessions for Team Member invites matching user's email
     for (const [, existingSession] of SESSIONS.entries()) {
-      if (existingSession && existingSession.business && existingSession.tokens && existingSession.business.business_id !== ownedBusiness.business_id) {
+      if (existingSession && existingSession.business && existingSession.tokens && existingSession.business.business_id !== businessId) {
         try {
           const members = await GoogleSheetsRepository.getRows(
             existingSession.tokens,
@@ -197,7 +189,6 @@ export class AuthService {
           );
 
           if (match) {
-            // Mark invite active if pending
             if (match.status === 'pending') {
               await GoogleSheetsRepository.updateRow(
                 existingSession.tokens,
@@ -209,10 +200,11 @@ export class AuthService {
               ).catch(() => {});
             }
 
-            availableWorkspaces.push({
+            joinedWorkspaces.push({
               business_id: existingSession.business.business_id,
-              business_name: existingSession.business.business_name || 'Shared Workspace',
+              business_name: existingSession.business.business_name || 'Joined Workspace',
               role: match.role || 'member',
+              is_owner: false,
               business: existingSession.business,
               tokens: existingSession.tokens
             });
@@ -223,10 +215,36 @@ export class AuthService {
       }
     }
 
-    // Default active workspace: Owned workspace if completed or first available
-    const activeWs = (ownedBusiness.onboarding_completed || availableWorkspaces.length === 1)
-      ? availableWorkspaces[0]
-      : availableWorkspaces[availableWorkspaces.length - 1];
+    // 3. Determine active workspace
+    let activeBusiness = ownedBusiness;
+    let activeTokens = tokens;
+    let activeRole = 'owner';
+
+    // If explicit targetInviteBiz provided or requested, prioritize that workspace
+    if (targetInviteBiz) {
+      const targetJoined = joinedWorkspaces.find(j => j.business_id === targetInviteBiz);
+      if (targetJoined) {
+        activeBusiness = targetJoined.business;
+        activeTokens = targetJoined.tokens;
+        activeRole = targetJoined.role;
+      }
+    }
+
+    // 4. Build workspace options list for Workspace Switcher
+    const workspaces = [
+      {
+        business_id: ownedBusiness.business_id,
+        business_name: ownedBusiness.business_name || `${profile.name || 'My'}'s Business`,
+        role: 'owner',
+        is_owner: true
+      },
+      ...joinedWorkspaces.map(j => ({
+        business_id: j.business_id,
+        business_name: j.business_name,
+        role: j.role,
+        is_owner: false
+      }))
+    ];
 
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const sessionData = {
@@ -237,15 +255,12 @@ export class AuthService {
         name: profile.name || 'User',
         picture: profile.picture || ''
       },
-      business: activeWs.business,
-      tokens: activeWs.tokens,
-      role: activeWs.role,
-      workspaces: availableWorkspaces.map(w => ({
-        business_id: w.business_id,
-        business_name: w.business_name,
-        role: w.role
-      })),
-      allWorkspaceData: availableWorkspaces,
+      business: activeBusiness,
+      tokens: activeTokens,
+      role: activeRole,
+      ownedBusiness,
+      joinedWorkspaces,
+      workspaces,
       createdAt: Date.now()
     };
 
@@ -254,23 +269,29 @@ export class AuthService {
     return sessionData;
   }
 
-  static async switchWorkspace(sessionToken, targetBusinessId) {
+  static switchWorkspace(sessionToken, targetBusinessId) {
     const session = SESSIONS.get(sessionToken);
-    if (!session || !session.allWorkspaceData) {
-      throw new Error('Session not found or invalid');
+    if (!session) throw new Error('Invalid or expired session');
+
+    if (session.ownedBusiness && session.ownedBusiness.business_id === targetBusinessId) {
+      session.business = session.ownedBusiness;
+      session.role = 'owner';
+      SESSIONS.set(sessionToken, session);
+      saveSessionsToDisk(SESSIONS);
+      return session;
     }
 
-    const target = session.allWorkspaceData.find(w => w.business_id === targetBusinessId);
-    if (!target) {
-      throw new Error('Workspace not found or access denied');
+    const joined = (session.joinedWorkspaces || []).find(j => j.business_id === targetBusinessId);
+    if (joined) {
+      session.business = joined.business;
+      session.tokens = joined.tokens;
+      session.role = joined.role;
+      SESSIONS.set(sessionToken, session);
+      saveSessionsToDisk(SESSIONS);
+      return session;
     }
 
-    session.business = target.business;
-    session.tokens = target.tokens;
-    session.role = target.role;
-
-    saveSessionsToDisk(SESSIONS);
-    return session;
+    throw new Error('You do not have permission to access the requested business workspace.');
   }
 
   static getSession(sessionToken) {
