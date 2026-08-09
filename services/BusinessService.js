@@ -68,6 +68,11 @@ export class BusinessService {
       logo_url: onboardingData.logo_url || '',
       invoice_prefix: onboardingData.invoice_prefix || 'INV-',
       quotation_prefix: onboardingData.quotation_prefix || 'QUO-',
+      bank_beneficiary: onboardingData.bank_beneficiary || onboardingData.business_name || '',
+      bank_acc_no: onboardingData.bank_acc_no || '',
+      bank_ifsc: onboardingData.bank_ifsc || '',
+      bank_name: onboardingData.bank_name || '',
+      bank_upi: onboardingData.bank_upi || '',
       onboarding_completed: true,
       updated_at: new Date().toISOString()
     };

@@ -14,6 +14,7 @@ export const TAB_SCHEMAS = {
     'business_id', 'owner_google_id', 'business_name', 'business_type', 'email', 
     'phone', 'address', 'city', 'state', 'country', 'pincode', 'tax_number', 
     'currency', 'logo_url', 'spreadsheet_id', 'invoice_prefix', 'quotation_prefix', 
+    'bank_beneficiary', 'bank_acc_no', 'bank_ifsc', 'bank_name', 'bank_upi',
     'onboarding_completed', 'created_at', 'updated_at'
   ],
   Customers: [
