@@ -63,6 +63,9 @@ await fastify.register(fastifyStatic, {
   prefix: '/'
 });
 
+// Health Check Route
+fastify.get('/api/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
 // Register API Routes
 await fastify.register(authRoutes);
 await fastify.register(businessRoutes);

@@ -131,6 +131,31 @@ export class QuotationService {
     return quotationRecord;
   }
 
+  static async updateQuotation(session, quotationId, quotationData) {
+    const { business, tokens } = session;
+    const updated = await GoogleSheetsRepository.updateRow(
+      tokens,
+      business.spreadsheet_id || '',
+      'Quotations',
+      'quotation_id',
+      quotationId,
+      quotationData
+    );
+
+    await AuditLogService.logActivity(session, {
+      action: 'UPDATE',
+      resource_type: 'Quotation',
+      resource_id: quotationId,
+      description: `Updated quotation details`
+    });
+
+    return updated;
+  }
+
+  static async updateQuotationStatus(session, quotationId, status) {
+    return this.updateQuotation(session, quotationId, { status });
+  }
+
   static async convertToInvoice(session, quotationId) {
     const quotation = await this.getQuotationById(session, quotationId);
     if (!quotation) throw new Error('Quotation not found');
