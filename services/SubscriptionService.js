@@ -18,6 +18,34 @@ export class SubscriptionService {
     });
   }
 
+  static generateSignature(businessId, expiresAt, paymentId) {
+    const secret = env.SESSION_SECRET || 'bizsheet_secure_hash_secret_key';
+    return crypto
+      .createHmac('sha256', secret)
+      .update(`${businessId}:${expiresAt}:${paymentId}`)
+      .digest('hex');
+  }
+
+  static isSubscriptionValid(business) {
+    if (!business || business.subscription_status !== 'active') return false;
+    const expiresAt = business.subscription_expires_at ? new Date(business.subscription_expires_at) : null;
+    if (!expiresAt || expiresAt <= new Date()) return false;
+
+    // Verify cryptographic signature against server secret
+    const expectedSig = this.generateSignature(
+      business.business_id,
+      business.subscription_expires_at,
+      business.subscription_last_payment_id || ''
+    );
+
+    if (business.subscription_signature !== expectedSig) {
+      console.warn(`🚨 [SECURITY ALERT] Manual subscription tampering detected for business ${business.business_id}. Rejected.`);
+      return false;
+    }
+
+    return true;
+  }
+
   /**
    * Returns current workspace subscription status and invoice count
    */
@@ -46,8 +74,8 @@ export class SubscriptionService {
     }
 
     const expiresAt = business.subscription_expires_at ? new Date(business.subscription_expires_at) : null;
-    const isPro = business.subscription_status === 'active' && expiresAt && expiresAt > new Date();
-    const daysLeft = isPro ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
+    const isPro = this.isSubscriptionValid(business);
+    const daysLeft = isPro && expiresAt ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : 0;
     const canCreateInvoice = isPro || invoiceCount < FREE_INVOICE_LIMIT;
 
     return {
@@ -162,12 +190,14 @@ export class SubscriptionService {
     }
 
     const expiresAt = new Date(startDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const signature = this.generateSignature(business.business_id, expiresAt, paymentReference || '');
 
     const updatedData = {
       subscription_status: 'active',
       subscription_plan: 'pro_monthly',
       subscription_expires_at: expiresAt,
       subscription_last_payment_id: paymentReference || '',
+      subscription_signature: signature,
       updated_at: new Date().toISOString()
     };
 

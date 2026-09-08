@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { GoogleSheetsRepository } from '../repositories/GoogleSheetsRepository.js';
 import { AuditLogService } from './AuditLogService.js';
+import { SubscriptionService } from './SubscriptionService.js';
 
 export class InvoiceService {
   static async getInvoices(session) {
@@ -61,8 +62,8 @@ export class InvoiceService {
     const existingInvoices = (Array.isArray(existing) ? existing : []).filter(r => r && r.business_id === business.business_id);
     const totalCreated = existingInvoices.length;
 
-    // Enforce 10 Free Invoices limit unless Pro subscription is active
-    const isPro = business.subscription_status === 'active' && business.subscription_expires_at && new Date(business.subscription_expires_at) > new Date();
+    // Enforce 10 Free Invoices limit unless Pro subscription is cryptographically verified
+    const isPro = SubscriptionService.isSubscriptionValid(business);
     if (!isPro && totalCreated >= 10) {
       const err = new Error('You have reached your 10 free invoices limit. Upgrade to Bizsheet Pro for ₹100/month to create unlimited invoices.');
       err.code = 'FREE_LIMIT_REACHED';
