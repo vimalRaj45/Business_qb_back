@@ -21,6 +21,7 @@ import { developerRoutes } from './routes/developerRoutes.js';
 import { developerApiV1Routes } from './routes/developerApiV1Routes.js';
 import { chatbotRoutes } from './routes/chatbotRoutes.js';
 import { teamRoutes } from './routes/teamRoutes.js';
+import { subscriptionRoutes } from './routes/subscriptionRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +82,7 @@ await fastify.register(developerRoutes);
 await fastify.register(developerApiV1Routes);
 await fastify.register(chatbotRoutes);
 await fastify.register(teamRoutes);
+await fastify.register(subscriptionRoutes);
 
 // Global Error Handler
 fastify.setErrorHandler((error, request, reply) => {

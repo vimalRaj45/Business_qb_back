@@ -17,6 +17,7 @@
     "fastify": "^4.28.1",
     "google-auth-library": "^9.11.0",
     "googleapis": "^140.0.1",
+    "razorpay": "^2.9.8",
     "zod": "^3.23.8"
   }
 }

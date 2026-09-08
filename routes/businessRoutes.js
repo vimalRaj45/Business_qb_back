@@ -32,9 +32,55 @@ export async function businessRoutes(fastify, opts) {
     }
   });
 
-  // Delete Business Account & Google Drive File (Owner Only)
+  // Send Workspace Deletion Confirmation OTP (Owner Only)
+  fastify.post('/api/business/delete-otp', { preHandler: [requireOwner] }, async (request, reply) => {
+    try {
+      const ownerEmail = request.session.user?.email || request.session.business?.email;
+      if (!ownerEmail) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'NO_EMAIL', message: 'No registered owner email found on this session.' }
+        });
+      }
+
+      const businessName = request.session.business?.business_name || 'My Business';
+      await EmailService.sendDeletionOTPEmail(ownerEmail, businessName);
+
+      return {
+        success: true,
+        message: `Deletion confirmation code sent to ${ownerEmail}`,
+        email: ownerEmail
+      };
+    } catch (err) {
+      console.error('Send deletion OTP error:', err);
+      return reply.status(500).send({
+        success: false,
+        error: { code: 'OTP_SEND_ERROR', message: err.message }
+      });
+    }
+  });
+
+  // Delete Business Account & Google Drive File (Owner Only, Requires OTP)
   fastify.delete('/api/business', { preHandler: [requireOwner] }, async (request, reply) => {
     try {
+      let otp = (request.body && request.body.otp) || (request.query && request.query.otp);
+      if (typeof otp === 'number') otp = otp.toString();
+      if (!otp || typeof otp !== 'string' || otp.trim().length !== 6) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'OTP_REQUIRED', message: 'A valid 6-digit confirmation OTP code is required to delete the workspace.' }
+        });
+      }
+
+      const ownerEmail = request.session.user?.email || request.session.business?.email;
+      const verifyRes = EmailService.verifyOTP(ownerEmail, otp.trim());
+      if (!verifyRes.valid) {
+        return reply.status(400).send({
+          success: false,
+          error: { code: 'INVALID_OTP', message: verifyRes.message }
+        });
+      }
+
       const res = await BusinessService.deleteAccount(request.session);
       return { success: true, message: res.message };
     } catch (err) {

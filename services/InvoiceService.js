@@ -58,7 +58,21 @@ export class InvoiceService {
   static async createInvoice(session, invoiceData) {
     const { business, tokens } = session;
     const existing = await GoogleSheetsRepository.getRows(tokens, business.spreadsheet_id || '', 'Invoices');
-    const count = (Array.isArray(existing) ? existing : []).filter(r => r && r.business_id === business.business_id).length + 1;
+    const existingInvoices = (Array.isArray(existing) ? existing : []).filter(r => r && r.business_id === business.business_id);
+    const totalCreated = existingInvoices.length;
+
+    // Enforce 10 Free Invoices limit unless Pro subscription is active
+    const isPro = business.subscription_status === 'active' && business.subscription_expires_at && new Date(business.subscription_expires_at) > new Date();
+    if (!isPro && totalCreated >= 10) {
+      const err = new Error('You have reached your 10 free invoices limit. Upgrade to Bizsheet Pro for ₹100/month to create unlimited invoices.');
+      err.code = 'FREE_LIMIT_REACHED';
+      err.statusCode = 402;
+      err.limit = 10;
+      err.currentCount = totalCreated;
+      throw err;
+    }
+
+    const count = totalCreated + 1;
     const prefix = business.invoice_prefix || 'INV-';
     const invoiceNumber = invoiceData.invoice_number || `${prefix}${String(count).padStart(5, '0')}`;
 

@@ -106,4 +106,86 @@ export class EmailService {
       throw err;
     }
   }
+
+  static async sendDeletionOTPEmail(targetEmail, businessName = 'My Business') {
+    const cleanEmail = targetEmail.toLowerCase().trim();
+    const otp = this.generateOTP(cleanEmail);
+    console.log(`🔒 [WORKSPACE DELETION OTP] Email: ${cleanEmail} | Business: ${businessName} | Code: ${otp}`);
+
+    if (!env.BREVO_API_KEY) {
+      console.warn('⚠️ BREVO_API_KEY not configured. Use the logged OTP code to complete deletion.');
+      return { success: true, email: cleanEmail, message: `Deletion OTP [${otp}] generated for testing` };
+    }
+
+    const brevoUrl = 'https://api.brevo.com/v3/smtp/email';
+    const payload = {
+      sender: {
+        name: 'BizSheet Security',
+        email: env.BREVO_SENDER || 'no-reply@bizsheet.vsgrps.com'
+      },
+      to: [
+        { email: cleanEmail }
+      ],
+      subject: `[${otp}] Confirm Permanent Deletion of Workspace "${businessName}"`,
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #ffffff; border-radius: 16px; border: 1px solid #fee2e2;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <div style="display: inline-block; width: 52px; height: 52px; background: #ef4444; color: #ffffff; border-radius: 14px; font-size: 26px; line-height: 52px; font-weight: bold;">
+              ⚠
+            </div>
+            <h2 style="color: #991b1b; margin-top: 12px; margin-bottom: 4px;">Confirm Workspace Deletion</h2>
+            <p style="color: #64748b; font-size: 13px; margin: 0;">BizSheet Billing & Accounting Platform</p>
+          </div>
+
+          <div style="background: #fff1f2; border: 1px solid #fecdd3; padding: 16px; border-radius: 12px; margin-bottom: 20px;">
+            <p style="color: #9f1239; font-size: 13px; line-height: 1.6; margin: 0;">
+              <strong>WARNING:</strong> A request was made to permanently delete the workspace <strong>"${businessName}"</strong> and erase its associated Google Drive spreadsheet (<em>"Business Billing Data"</em>).
+            </p>
+          </div>
+
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; text-align: center; margin: 20px 0;">
+            <p style="color: #475569; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-top: 0; font-weight: bold;">Your 6-Digit Deletion Confirmation Code</p>
+            <div style="font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #dc2626; font-family: monospace;">${otp}</div>
+            <p style="color: #94a3b8; font-size: 11px; margin-bottom: 0; margin-top: 8px;">Valid for 10 minutes. Do not share this code with anyone.</p>
+          </div>
+
+          <p style="color: #64748b; font-size: 12px; line-height: 1.5;">
+            If you did not initiate this deletion request, someone may be attempting to access your account. Please log in immediately and revoke sessions.
+          </p>
+          <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+          <p style="color: #cbd5e1; font-size: 10px; text-align: center;">&copy; 2026 BizSheet Platform. All rights reserved.</p>
+        </div>
+      `
+    };
+
+    try {
+      const res = await fetch(brevoUrl, {
+        method: 'POST',
+        headers: {
+          'api-key': env.BREVO_API_KEY,
+          'content-type': 'application/json',
+          'accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error('❌ Brevo Deletion OTP API error:', res.status, errText);
+        if (env.NODE_ENV === 'development') {
+          return { success: true, email: cleanEmail, message: `Deletion OTP [${otp}] logged to console` };
+        }
+        throw new Error(`Brevo API Error (${res.status}): ${errText}`);
+      }
+
+      console.log(`📧 Brevo Deletion OTP Email sent to ${cleanEmail}`);
+      return { success: true, email: cleanEmail };
+    } catch (err) {
+      if (env.NODE_ENV === 'development') {
+        console.warn('⚠️ OTP delivery fallback used in dev:', err.message);
+        return { success: true, email: cleanEmail, message: `Deletion OTP [${otp}] logged to console` };
+      }
+      throw err;
+    }
+  }
 }
