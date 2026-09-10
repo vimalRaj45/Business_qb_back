@@ -17,7 +17,7 @@ export async function chatbotRoutes(fastify, opts) {
     }
 
     try {
-      const answer = await ChatbotService.askMistral(request.session, textQuery, history || []);
+      const answer = await ChatbotService.askAssistant(request.session, textQuery, history || []);
       return { success: true, reply: answer, answer };
     } catch (err) {
       console.error('Chatbot route error:', err.message);

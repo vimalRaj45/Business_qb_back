@@ -5,12 +5,8 @@ import { QuotationService } from './QuotationService.js';
 export class ChatbotService {
   /**
    * Built-in intelligent business assistant running 100% locally.
-   * No third-party AI APIs are used; user data never leaves the server.
+   * Deterministic keyword matching and ledger calculation; no third-party AI APIs used.
    */
-  static async askMistral(session, userQuery, messageHistory = []) {
-    return this.askAssistant(session, userQuery, messageHistory);
-  }
-
   static async askAssistant(session, userQuery, messageHistory = []) {
     const q = (userQuery || '').toLowerCase().trim();
     const businessName = session?.business?.business_name || 'My Business';

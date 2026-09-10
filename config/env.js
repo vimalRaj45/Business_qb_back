@@ -14,7 +14,6 @@ export const env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
   GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback',
-  MISTRAL_API_KEY: process.env.MISTRAL_API_KEY || '',
   BREVO_API_KEY: process.env.BREVO_API_KEY || '',
   BREVO_SENDER: process.env.BREVO_SENDER || 'malikasaravanan774@gmail.com',
   SESSION_SECRET: process.env.SESSION_SECRET || 'default_super_secret_key_billing_platform_2026',
